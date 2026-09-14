@@ -2,7 +2,7 @@ import { siteConfigSchema, type SiteConfig } from "@/types/site";
 import { z } from "zod";
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-3.5-flash";
+const MODEL = "google/gemini-3.8-flash";
 
 export class AiError extends Error {}
 
@@ -168,6 +168,9 @@ export async function aiEditSite(config: SiteConfig, instruction: string): Promi
 ${SCHEMA_DOC}
 ${RULES}
 - Devolva o JSON COMPLETO e atualizado do site, preservando tudo que não foi pedido para mudar.
+- Altere APENAS o que foi pedido. Todos os outros campos devem sair byte a byte iguais aos atuais.
+- Se o pedido fala de uma cor específica (ex.: "fundo mais escuro"), mude somente esse campo; não mexa em primaryColor,
+  secondaryColor, fontes, espaçamento, seções ou textos que não foram citados.
 - Não apague informações de contato existentes.`,
     },
     {

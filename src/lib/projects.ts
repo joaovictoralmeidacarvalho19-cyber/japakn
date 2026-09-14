@@ -138,6 +138,24 @@ export function configOf(project: Pick<ProjectRow, "site_config" | "name">): Sit
   return safeParseSiteConfig(project.site_config) ?? emptySiteConfig(project.name);
 }
 
+export type AiMessageRow = {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+};
+
+export async function listAiMessages(projectId: string): Promise<AiMessageRow[]> {
+  const { data, error } = await supabase
+    .from("ai_messages")
+    .select("id, role, content, created_at")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (error) throw error;
+  return (data ?? []) as AiMessageRow[];
+}
+
 export type VersionRow = {
   id: string;
   label: string | null;

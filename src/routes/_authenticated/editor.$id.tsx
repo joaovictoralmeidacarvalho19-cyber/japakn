@@ -7,6 +7,7 @@ import { Eye, EyeOff, Globe, History, ImagePlus, Loader2, Monitor, Send, Smartph
 import {
   configOf,
   getProject,
+  listAiMessages,
   listVersions,
   publishProject,
   saveConfig,
@@ -74,6 +75,11 @@ function Editor() {
   const { data: versions = [], refetch: refetchVersions } = useQuery({
     queryKey: ["versions", id],
     queryFn: () => listVersions(id),
+  });
+
+  const { data: messages = [], refetch: refetchMessages } = useQuery({
+    queryKey: ["ai-messages", id],
+    queryFn: () => listAiMessages(id),
   });
 
   useEffect(() => {
@@ -161,6 +167,7 @@ function Editor() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não conseguimos aplicar essa alteração.");
     } finally {
+      await refetchMessages();
       setThinking(false);
     }
   }
@@ -255,6 +262,22 @@ function Editor() {
                 Peça em português. Ex.: “deixe as cores mais escuras”, “troque o título do destaque”, “adicione uma
                 seção de perguntas frequentes”.
               </p>
+              {messages.length > 0 && (
+                <ul className="max-h-64 space-y-2 overflow-auto rounded-lg border border-border p-3">
+                  {messages.map((message) => (
+                    <li
+                      key={message.id}
+                      className={`rounded-md px-3 py-2 text-sm ${
+                        message.role === "user"
+                          ? "bg-primary/10 text-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {message.content}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <Textarea
                 rows={4}
                 value={instruction}

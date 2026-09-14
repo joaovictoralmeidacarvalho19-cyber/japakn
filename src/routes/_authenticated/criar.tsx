@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Sparkles } from "lucide-react";
 import { analyzeBusiness, generateSite } from "@/lib/site.functions";
@@ -51,6 +51,9 @@ function CreateFlow() {
   const [primaryColor, setPrimaryColor] = useState(PALETTE[0]!);
   const [businessName, setBusinessName] = useState("");
   const [experience, setExperience] = useState<ExperienceLevel>("premium");
+  const [extracted, setExtracted] = useState<Record<string, string>>({});
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
 
   async function handleAnalyze() {
     if (description.trim().length < 10) {
@@ -64,6 +67,7 @@ function CreateFlow() {
       });
       if (!result.ok) toast.info(result.error ?? "Seguindo sem análise automática.");
       const business = (result.business ?? {}) as Record<string, string>;
+      setExtracted(business);
       if (business["name"]) setBusinessName(business["name"]);
       setQuestions(result.questions ?? []);
       setStep(1);
@@ -84,6 +88,15 @@ function CreateFlow() {
         ...(category ? { category } : {}),
         description: description.trim(),
       });
+      // Junta o que foi extraído da descrição + respostas + nome confirmado,
+      // para nenhum dado informado se perder na geração.
+      const merged: Record<string, string> = {};
+      for (const [key, value] of Object.entries({ ...extracted, ...answers })) {
+        const clean = String(value ?? "").trim();
+        if (clean) merged[key.slice(0, 40)] = clean.slice(0, 500);
+      }
+      if (businessName.trim()) merged["name"] = businessName.trim().slice(0, 500);
+
       const result = await generate({
         data: {
           projectId: project.id,
@@ -93,16 +106,16 @@ function CreateFlow() {
           primaryColor,
           goal,
           experience,
-          answers,
+          answers: merged,
         },
       });
       if (!result.ok) throw new Error(result.error);
       toast.success("Seu site está pronto!");
       navigate({ to: "/editor/$id", params: { id: project.id } });
     } catch (error) {
+      if (!alive.current) return;
       toast.error(error instanceof Error ? error.message : "Não conseguimos gerar o site.");
       setStep(2);
-    } finally {
       setBusy(false);
     }
   }
