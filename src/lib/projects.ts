@@ -173,3 +173,7 @@ export async function listVersions(projectId: string): Promise<VersionRow[]> {
   if (error) throw error;
   return (data ?? []) as VersionRow[];
 }
+export async function deleteVersion(versionId: string) {
+  const { error } = await supabase.from("versions").delete().eq("id", versionId);
+  if (error) throw error;
+}

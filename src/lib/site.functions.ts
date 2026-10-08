@@ -3,6 +3,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { siteConfigSchema } from "@/types/site";
 
+const DAILY_LIMIT = 60;
+async function overDailyLimit(supabase: { from: (t: "versions") => any }, userId: string) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count } = await supabase
+    .from("versions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", since);
+  return (count ?? 0) >= DAILY_LIMIT;
+}
+const LIMIT_MSG = "Você atingiu o limite diário de alterações. Tente novamente amanhã.";
+
 export const analyzeBusiness = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -52,6 +64,7 @@ export const generateSite = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { aiGenerateSite, AiError } = await import("./ai.server");
     const { supabase, userId } = context;
+    if (await overDailyLimit(supabase, userId)) return { ok: false as const, error: LIMIT_MSG };
 
     const { data: project, error: loadError } = await supabase
       .from("projects")
@@ -114,6 +127,7 @@ export const editSiteWithAi = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { aiEditSite, AiError } = await import("./ai.server");
     const { supabase, userId } = context;
+    if (await overDailyLimit(supabase, userId)) return { ok: false as const, error: LIMIT_MSG };
 
     const { data: project } = await supabase
       .from("projects")

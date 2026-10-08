@@ -35,6 +35,10 @@ function AuthPage() {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/dashboard" });
     });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) navigate({ to: "/dashboard" });
+    });
+    return () => sub.subscription.unsubscribe();
   }, [navigate]);
 
   const isSignup = mode === "signup";
@@ -48,12 +52,12 @@ function AuthPage() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
+            emailRedirectTo: `${window.location.origin}/auth`,
             data: { full_name: name },
           },
         });
         if (error) throw error;
-        toast.success("Conta criada! Você já pode começar.");
+        toast.success("Conta criada! Enviamos um link de confirmação para o seu e-mail.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;

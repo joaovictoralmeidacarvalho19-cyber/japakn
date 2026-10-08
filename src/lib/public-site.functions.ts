@@ -27,12 +27,8 @@ export const getPublishedSite = createServerFn({ method: "GET" })
       },
     });
 
-    const { data: project } = await client
-      .from("projects")
-      .select("name, slug, site_config, published_at")
-      .eq("slug", data.slug)
-      .eq("status", "published")
-      .maybeSingle();
+    const { data: rows } = await client.rpc("get_published_site", { _slug: data.slug });
+    const project = Array.isArray(rows) ? rows[0] : undefined;
 
     if (!project) return { found: false as const };
     const parsed = siteConfigSchema.safeParse(project.site_config);

@@ -3,12 +3,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Eye, EyeOff, Globe, History, ImagePlus, Loader2, Monitor, Send, Smartphone, Tablet } from "lucide-react";
+import { Eye, EyeOff, Globe, History, ImagePlus, Loader2, Monitor, Send, Smartphone, Tablet, Undo2 } from "lucide-react";
 import {
   configOf,
   getProject,
   listAiMessages,
   listVersions,
+  deleteVersion,
   publishProject,
   saveConfig,
   snapshotVersion,
@@ -136,15 +137,43 @@ function Editor() {
     }
     if (config) await snapshotVersion(id, config, "Antes de restaurar");
     setConfig(parsed);
-    await persist(parsed);
+    await persist(parsed, false);
     await refetchVersions();
   }
 
-  async function persist(next: SiteConfig) {
+  async function undo() {
+    const fresh = await listVersions(id).catch(() => versions);
+    const last = fresh[0];
+    const parsed = last ? safeParseSiteConfig(last.site_config) : null;
+    if (!last || !parsed) {
+      toast.info("Não há alterações para desfazer.");
+      return;
+    }
     setSaving(true);
     try {
+      await saveConfig(id, parsed);
+      await deleteVersion(last.id);
+      setConfig(parsed);
+      await qc.invalidateQueries({ queryKey: ["project", id] });
+      await refetchVersions();
+      toast.success("Alteração desfeita.");
+    } catch {
+      toast.error("Não conseguimos desfazer agora.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function persist(next: SiteConfig, snapshot = true) {
+    setSaving(true);
+    try {
+      const saved = project ? safeParseSiteConfig(project.site_config) : null;
+      if (snapshot && saved && JSON.stringify(saved) !== JSON.stringify(next)) {
+        await snapshotVersion(id, saved, "Antes de salvar manualmente");
+      }
       await saveConfig(id, next);
       await qc.invalidateQueries({ queryKey: ["project", id] });
+      await refetchVersions();
       toast.success("Alterações salvas.");
     } catch {
       toast.error("Não conseguimos salvar agora.");
@@ -162,7 +191,8 @@ function Editor() {
       const result = await editWithAi({ data: { projectId: id, instruction: text } });
       if (!result.ok) throw new Error(result.error);
       setConfig(result.config as SiteConfig);
-      toast.success("Alteração aplicada.");
+      await qc.invalidateQueries({ queryKey: ["project", id] });
+      toast.success("Alteração aplicada.", { action: { label: "Desfazer", onClick: () => void undo() } });
       await refetchVersions();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não conseguimos aplicar essa alteração.");
@@ -231,6 +261,15 @@ function Editor() {
           })}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={undo}
+            disabled={saving || thinking || versions.length === 0}
+            aria-label="Desfazer última alteração"
+          >
+            <Undo2 className="mr-2 h-4 w-4" /> Desfazer
+          </Button>
           <Button variant="outline" size="sm" onClick={() => persist(config)} disabled={saving}>
             {saving ? "Salvando..." : "Salvar"}
           </Button>

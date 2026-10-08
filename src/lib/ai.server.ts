@@ -1,5 +1,6 @@
 import { siteConfigSchema, type SiteConfig } from "@/types/site";
 import { z } from "zod";
+import { applyOperations, OperationError } from "./site-operations";
 
 const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-3.8-flash";
@@ -160,17 +161,30 @@ Gere o site completo agora.`,
 }
 
 
+const OPS_DOC = `
+Responda JSON: { "operations": [ ... ] } usando SOMENTE estas operações:
+- { "op": "set_theme", "changes": { campos de theme a mudar } }
+- { "op": "set_business", "changes": { campos de business a mudar } }
+- { "op": "set_seo", "changes": { "title"?, "description"? } }
+- { "op": "update_section", "sectionId": "id existente", "changes": { campos da seção a mudar } }
+- { "op": "add_section", "section": { "type", ...campos }, "afterId": "id da seção anterior" }
+- { "op": "remove_section", "sectionId" }
+- { "op": "move_section", "sectionId", "afterId": "id" ou null para o fim }
+- { "op": "update_item", "sectionId", "itemId", "changes": { campos do item } }
+- { "op": "add_item", "sectionId", "item": { campos } }
+- { "op": "remove_item", "sectionId", "itemId" }
+Inclua em "changes" apenas os campos que mudam. Use os ids exatos da configuração atual.`;
+
 export async function aiEditSite(config: SiteConfig, instruction: string): Promise<SiteConfig> {
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `Você edita a configuração estruturada de um site conforme o pedido do usuário.
+      content: `Você edita um site aplicando operações pontuais conforme o pedido do usuário.
 ${SCHEMA_DOC}
 ${RULES}
-- Devolva o JSON COMPLETO e atualizado do site, preservando tudo que não foi pedido para mudar.
-- Altere APENAS o que foi pedido. Todos os outros campos devem sair byte a byte iguais aos atuais.
-- Se o pedido fala de uma cor específica (ex.: "fundo mais escuro"), mude somente esse campo; não mexa em primaryColor,
-  secondaryColor, fontes, espaçamento, seções ou textos que não foram citados.
+${OPS_DOC}
+- Faça o MÍNIMO de operações para atender exatamente ao pedido. Nada além disso.
+- Se o pedido fala de uma cor específica (ex.: "fundo mais escuro"), mude somente esse campo.
 - Não apague informações de contato existentes.`,
     },
     {
@@ -178,7 +192,22 @@ ${RULES}
       content: `Configuração atual:\n${JSON.stringify(config)}\n\nPedido do usuário: ${instruction}`,
     },
   ];
-  return validateWithRetry(messages);
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const raw = (await chatJson(messages)) as { operations?: unknown };
+    const ops = Array.isArray(raw?.operations) ? raw.operations : null;
+    if (!ops) continue;
+    try {
+      return applyOperations(config, ops);
+    } catch (e) {
+      const msg = e instanceof OperationError ? e.message : "erro ao aplicar";
+      messages.push(
+        { role: "assistant", content: JSON.stringify(raw).slice(0, 4000) },
+        { role: "user", content: `As operações falharam: ${msg}. Reenvie as operações corrigidas.` },
+      );
+    }
+  }
+  throw new AiError("Não conseguimos aplicar essa mudança. Tente reformular o pedido.");
 }
 
 async function validateWithRetry(messages: ChatMessage[]): Promise<SiteConfig> {

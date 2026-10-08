@@ -95,6 +95,8 @@ const hex = z
   .catch("#111827");
 
 export const itemSchema = z.object({
+  /** ID estável do elemento (formato v2). */
+  id: z.string().max(80).optional(),
   title: z.string().max(160).optional(),
   description: z.string().max(800).optional(),
   price: z.string().max(60).optional(),
@@ -188,13 +190,53 @@ export const seoSchema = z.object({
   shareImage: z.string().max(2000).optional(),
 });
 
-export const siteConfigSchema = z.object({
-  version: z.literal(1).catch(1).default(1),
+/** Formato atual. v1 (seções sem IDs nos itens) é convertido automaticamente. */
+export const SITE_CONFIG_VERSION = 2 as const;
+
+/** Converte qualquer configuração (v1 ou v2) para v2: IDs únicos em seções e itens. */
+export function migrateSiteConfig(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const cfg = raw as Record<string, unknown>;
+  if (!Array.isArray(cfg["sections"])) return raw;
+  const seen = new Set<string>();
+  const unique = (base: string) => {
+    let id = base.slice(0, 60) || "el";
+    let n = 2;
+    while (seen.has(id)) id = `${base.slice(0, 55)}-${n++}`;
+    seen.add(id);
+    return id;
+  };
+  const sections = cfg["sections"].map((sec, i) => {
+    if (!sec || typeof sec !== "object") return sec;
+    const s = sec as Record<string, unknown>;
+    const sid = unique(typeof s["id"] === "string" && s["id"] ? s["id"] : `${String(s["type"] ?? "section")}-${i + 1}`);
+    const items = Array.isArray(s["items"])
+      ? s["items"].map((it, j) =>
+          it && typeof it === "object"
+            ? {
+                ...(it as Record<string, unknown>),
+                id: unique(
+                  typeof (it as { id?: unknown }).id === "string" && (it as { id: string }).id
+                    ? (it as { id: string }).id
+                    : `${sid}-item-${j + 1}`,
+                ),
+              }
+            : it,
+        )
+      : s["items"];
+    return { ...s, id: sid, ...(items ? { items } : {}) };
+  });
+  return { ...cfg, version: SITE_CONFIG_VERSION, sections };
+}
+
+const siteConfigObject = z.object({
+  version: z.literal(SITE_CONFIG_VERSION).catch(SITE_CONFIG_VERSION).default(SITE_CONFIG_VERSION),
   business: businessSchema.default({ name: "" }),
   theme: themeSchema.default({}),
   seo: seoSchema.default({ title: "", description: "" }),
   sections: z.array(sectionSchema).min(1).max(20),
 });
+export const siteConfigSchema = z.preprocess(migrateSiteConfig, siteConfigObject);
 export type SiteConfig = z.infer<typeof siteConfigSchema>;
 
 export function emptySiteConfig(name = "Meu site"): SiteConfig {

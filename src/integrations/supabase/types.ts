@@ -184,7 +184,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_published_site: {
+        Args: { _slug: string }
+        Returns: {
+          name: string
+          site_config: Json
+          slug: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
